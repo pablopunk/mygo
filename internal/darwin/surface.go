@@ -882,7 +882,8 @@ func registerSurfaceClass() {
 			if s == nil {
 				return
 			}
-			if s.framePass == caPass && send(self, "inLiveResize") == 0 && (!s.resized || s.presentsWithTransaction()) {
+			// A resize after a frame presented with the transaction must wait for the display link tick, even across run-loop passes.
+			if send(self, "inLiveResize") == 0 && (s.resized && s.presentsWithTransaction() || !s.resized && s.framePass == caPass) {
 				// AppKit displays the view again before Core Animation
 				// commits the frame drawn in this pass, as while the
 				// trackpad scrolls. The next refresh draws it: as one just

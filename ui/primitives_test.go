@@ -850,6 +850,82 @@ func TestOnTextKeyComposer(t *testing.T) {
 	}
 }
 
+// SetTextSelection from OnTextKey takes effect before the next frame, so a
+// following key edits the selected rune position in the replacement text.
+func TestTextKeySetTextSelectionBeforeNextFrame(t *testing.T) {
+	text := ""
+	viewBuilds := 0
+	tt := coreNewTester(func(c *context) {
+		viewBuilds++
+		in := coreTextInputBase(c, &text).Label("draft")
+		in.OnTextKey(func(k TextKey) bool {
+			if k.Key != KeyEnter {
+				return false
+			}
+			k.SetText("猫a")
+			k.SetTextSelection(1, 1)
+			return true
+		})
+	}, 200, 50)
+	tt.Click("draft")
+	tt.Type("old")
+	tt.Frame()
+	buildsBeforeKeys := viewBuilds
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: platform.Key(platform.KeyEnter)})
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: platform.Key(platform.KeyBackspace)})
+	if viewBuilds != buildsBeforeKeys {
+		t.Fatalf("view rebuilt between raw key events: got %d builds, want %d", viewBuilds, buildsBeforeKeys)
+	}
+	tt.Frame()
+	if text != "a" {
+		t.Fatalf("text after Backspace before frame %q, want %q", text, "a")
+	}
+	tt.rt.close()
+}
+
+// TextKey and element selection setters both make a later caret move without
+// changing the selection saved by SetText in the last undo step. Undo restores
+// the pre-SetText text and selection; redo restores SetText’s caret, not the
+// later selection-only move. Selection moves are not edits.
+func TestTextKeySetTextSelectionUndoRedoMatchesElementSetter(t *testing.T) {
+ for _, callbackSetter := range []bool{true, false} {
+  name := "element"
+  if callbackSetter { name = "callback" }
+  t.Run(name, func(t *testing.T) {
+   value := ""
+   var input *node
+   tt := coreNewTester(func(c *context) {
+    input = coreTextInputBase(c, &value).Label("draft")
+    input.OnTextKey(func(k TextKey) bool {
+     if k.Key != KeyEnter { return false }
+     k.SetText("猫a")
+     if callbackSetter { k.SetTextSelection(1, 1) }
+     return true
+    })
+   }, 200, 50)
+   tt.Click("draft")
+   tt.Type("old")
+   tt.Frame()
+   if callbackSetter {
+    tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: platform.Key(platform.KeyEnter)})
+   } else {
+    input.st.editor.setText("猫a")
+    value = "猫a"
+    input.SetTextSelection(1, 1)
+   }
+   ed := input.st.editor
+   if value != "猫a" { t.Fatalf("after SetText %q", value) }
+   ed.takeBack(false)
+   // SetText amends the typed step; Undo returns to its original empty text.
+   if got := ed.String(); got != "" { t.Fatalf("undo text %q, want empty", got) }
+   ed.takeBack(true)
+   if got := ed.String(); got != "猫a" { t.Fatalf("redo text %q, want 猫a", got) }
+   // Selection-only moves preserve the edit snapshot, clamped to the two-rune replacement.
+   if a, c := ed.selection(); a != 2 || c != 2 { t.Fatalf("redo selection %d–%d, want SetText selection 2–2", a, c) }
+   tt.rt.close()
+  })
+ }
+}
 // OnTextKey sees the keys that type no text, Tab, Escape, the arrows and
 // Cmd chords among them, and what it leaves goes on as it would without
 // it: Tab moves the focus, Up moves the caret.

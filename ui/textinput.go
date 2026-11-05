@@ -213,6 +213,25 @@ func (k TextKey) SetText(s string) {
 	}
 }
 
+// SetTextSelection selects the runes from start to end in the input after
+// SetText, or puts the caret at start when they are equal. The offsets are
+// rune offsets clamped to the text; a text area scrolls the caret into view.
+// It is valid only while the OnTextKey callback runs.
+func (k TextKey) SetTextSelection(start, end int) {
+	ed := k.valid()
+	n := ed.buf.n
+	start, end = min(max(start, 0), n), min(max(end, 0), n)
+	ed.editorSelection = editorSelection{anchor: start, caret: end}
+	ed.hasDesired = false
+	if ed.area != nil {
+		ed.area.reveal = true
+	}
+	if w := ed.client; w != nil {
+		w.rt.consumed = true
+		w.rt.requestFrame()
+	}
+}
+
 // Lines makes a text area as high as its text, wrapped at its width, from
 // min lines up to max, past which it scrolls, as a message field grows with
 // what is typed: TextArea(c, &draft).Lines(1, 8). Without it, a text area is
