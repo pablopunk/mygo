@@ -445,8 +445,14 @@ func (t *tray) Dark() bool {
 
 // SetID gives the status item an autosave name: macOS keeps under it where
 // the user dragged the item with ⌘, and puts it there as it is made again.
+// macOS also keeps under it that the user dragged the item out of the bar, so
+// the item is shown again here: an app that makes an icon wants it seen, and
+// has no other way to bring back one the user dragged away.
 func (t *tray) SetID(id string) {
-	withPool(func() { send(t.item, "setAutosaveName:", uintptr(nsString(id))) })
+	withPool(func() {
+		send(t.item, "setAutosaveName:", uintptr(nsString(id)))
+		send(t.item, "setVisible:", 1)
+	})
 }
 
 func (t *tray) SetImage(png []byte, template bool) error {
